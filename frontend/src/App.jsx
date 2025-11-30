@@ -3,7 +3,9 @@ import "./App.css";
 import io from "socket.io-client";
 import Editor from "@monaco-editor/react";
 
-const socket = io("http://127.0.0.1:5000");
+const SERVER_URL="http://127.0.0.1:5000"
+
+const socket = io(SERVER_URL);
 
 const App = () => {
   const [joined, setJoined] = useState(false);
@@ -59,7 +61,7 @@ const App = () => {
 
   const fetchAutocomplete = async (currentCode, cursorPos) => {
     try {
-      const response = await fetch("http://127.0.0.1:5000/autocomplete", {
+      const response = await fetch(`${SERVER_URL}/autocomplete`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
