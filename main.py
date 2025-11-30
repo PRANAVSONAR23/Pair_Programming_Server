@@ -1,11 +1,14 @@
 import socketio
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 import os
 
+from database import get_db
+from models import Room
 
 class AutocompleteRequest(BaseModel):
     code: str
@@ -15,7 +18,7 @@ class AutocompleteRequest(BaseModel):
 origins = [
     "http://localhost:5000",
     "http://127.0.0.1:5000",
-    "*",   # Allow all (use only in development)
+    "*",
 ]
 
 # ---- Socket.IO Server ----
@@ -28,17 +31,70 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,            # Allowed frontend domains
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],              # GET, POST, PUT, DELETE, etc.
-    allow_headers=["*"],              # Allow all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 sio_app = socketio.ASGIApp(sio, other_asgi_app=app)
 
-rooms = {}           # {roomId: set(users)}
-user_to_room = {}    # sid -> roomId
-sid_to_user = {}     # sid -> username
+rooms = {}
+user_to_room = {}
+sid_to_user = {}
+
+
+# ---------------- DATABASE HELPERS ----------------
+
+def get_sync_db():
+    """Synchronous database session for Socket.IO events"""
+    from database import SessionLocal
+    db = SessionLocal()
+    try:
+        return db
+    finally:
+        pass  # Don't close here, caller should close
+
+def save_room_state(room_id: str, code: str = None, language: str = None, active_users: list = None):
+    """Save or update room state in database"""
+    db = get_sync_db()
+    try:
+        room = db.query(Room).filter(Room.room_id == room_id).first()
+        
+        if not room:
+            room = Room(
+                room_id=room_id,
+                code=code or "",
+                language=language or "python",
+                active_users=active_users or []
+            )
+            db.add(room)
+        else:
+            if code is not None:
+                room.code = code
+            if language is not None:
+                room.language = language
+            if active_users is not None:
+                room.active_users = active_users
+        
+        db.commit()
+        db.refresh(room)
+        return room
+    except Exception as e:
+        db.rollback()
+        print(f"Error saving room state: {e}")
+        return None
+    finally:
+        db.close()
+
+def get_room_state(room_id: str):
+    """Retrieve room state from database"""
+    db = get_sync_db()
+    try:
+        room = db.query(Room).filter(Room.room_id == room_id).first()
+        return room
+    finally:
+        db.close()
 
 
 # ---------------- SOCKET EVENTS ----------------
@@ -57,6 +113,10 @@ async def join(sid, data):
     if sid in user_to_room:
         old = user_to_room[sid]
         rooms[old].discard(sid_to_user[sid])
+        
+        # Update database for old room
+        save_room_state(old, active_users=list(rooms[old]))
+        
         await sio.emit("userJoined", list(rooms[old]), room=old)
         await sio.leave_room(sid, old)
 
@@ -67,9 +127,18 @@ async def join(sid, data):
         rooms[roomId] = set()
 
     rooms[roomId].add(userName)
-
     user_to_room[sid] = roomId
     sid_to_user[sid] = userName
+
+    # Save room state to database
+    room_state = get_room_state(roomId)
+    if room_state:
+        # Room exists, send existing code to new user
+        await sio.emit("codeUpdate", room_state.code, room=sid)
+        await sio.emit("languageUpdate", room_state.language, room=sid)
+    
+    # Update active users in database
+    save_room_state(roomId, active_users=list(rooms[roomId]))
 
     await sio.emit("userJoined", list(rooms[roomId]), room=roomId)
 
@@ -78,6 +147,10 @@ async def join(sid, data):
 async def codeChange(sid, data):
     roomId = data["roomId"]
     code = data["code"]
+    
+    # Save code to database
+    save_room_state(roomId, code=code)
+    
     await sio.emit("codeUpdate", code, room=roomId, skip_sid=sid)
 
 
@@ -92,6 +165,10 @@ async def typing(sid, data):
 async def languageChange(sid, data):
     roomId = data["roomId"]
     language = data["language"]
+    
+    # Save language to database
+    save_room_state(roomId, language=language)
+    
     await sio.emit("languageUpdate", language, room=roomId)
 
 
@@ -104,8 +181,11 @@ async def leaveRoom(sid):
     user = sid_to_user[sid]
 
     rooms[roomId].discard(user)
+    
+    # Update database
+    save_room_state(roomId, active_users=list(rooms[roomId]))
+    
     await sio.emit("userJoined", list(rooms[roomId]), room=roomId)
-
     await sio.leave_room(sid, roomId)
 
     del user_to_room[sid]
@@ -119,9 +199,47 @@ async def disconnect(sid):
         roomId = user_to_room[sid]
         user = sid_to_user[sid]
         rooms[roomId].discard(user)
+        
+        # Update database
+        save_room_state(roomId, active_users=list(rooms[roomId]))
+        
         await sio.emit("userJoined", list(rooms[roomId]), room=roomId)
         del user_to_room[sid]
         del sid_to_user[sid]
+
+
+# ---------------- REST API ENDPOINTS ----------------
+
+@app.get("/api/room/{room_id}")
+async def get_room(room_id: str, db: Session = Depends(get_db)):
+    """Get room information"""
+    room = db.query(Room).filter(Room.room_id == room_id).first()
+    if room:
+        return {
+            "room_id": room.room_id,
+            "code": room.code,
+            "language": room.language,
+            "active_users": room.active_users,
+            "created_at": room.created_at,
+            "updated_at": room.updated_at
+        }
+    return {"error": "Room not found"}
+
+
+@app.get("/api/rooms")
+async def list_rooms(db: Session = Depends(get_db)):
+    """List all rooms"""
+    rooms_list = db.query(Room).all()
+    return [
+        {
+            "room_id": room.room_id,
+            "language": room.language,
+            "active_users": room.active_users,
+            "created_at": room.created_at,
+            "updated_at": room.updated_at
+        }
+        for room in rooms_list
+    ]
 
 
 # ---------------- Autocomplete ----------------
@@ -132,11 +250,9 @@ async def autocomplete(request: AutocompleteRequest):
     cursor = request.cursorPosition
     language = request.language.lower()
     
-    # Get the line at cursor position
     lines = code[:cursor].split('\n')
     current_line = lines[-1] if lines else ""
     
-    # Simple rule-based suggestions
     suggestions = []
     
     if language == "python":
@@ -198,15 +314,13 @@ async def autocomplete(request: AutocompleteRequest):
         "allSuggestions": suggestions
     }
 
+
 # ---------------- SERVE FRONTEND ----------------
 
-# ABSOLUTE PATH to frontend/dist
 dist_path = os.path.join(os.path.dirname(__file__), "frontend", "dist")
 
-# Mount static assets (/assets folder)
 app.mount("/assets", StaticFiles(directory=os.path.join(dist_path, "assets")), name="assets")
 
-# Serve index.html for everything else
 @app.get("/{path:path}")
 async def serve_vue(path: str):
     return FileResponse(os.path.join(dist_path, "index.html"))
