@@ -3,7 +3,7 @@ import "./App.css";
 import io from "socket.io-client";
 import Editor from "@monaco-editor/react";
 
-const SERVER_URL="http://127.0.0.1:5000"
+const SERVER_URL="https://pair-programming-server.onrender.com"
 
 const socket = io(SERVER_URL);
 
