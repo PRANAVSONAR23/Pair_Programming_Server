@@ -11,6 +11,11 @@ A real-time peer programming platform that enables multiple developers to code t
 - 💾 **Persistent Sessions**: Room state saved to database
 - 🔌 **WebSocket Communication**: Low-latency updates via Socket.IO
 
+## 🚀 Live Preview
+
+
+🎮 **Live →** [https://pair-programming-server.onrender.com](https://pair-programming-server.onrender.com)
+
 ## Tech Stack
 
 ### Backend
@@ -20,7 +25,7 @@ A real-time peer programming platform that enables multiple developers to code t
 - **PostgreSQL/SQLite**: Data persistence
 
 ### Frontend
-- **Vue.js**: Progressive JavaScript framework
+- **React.js**: Progressive JavaScript framework
 - **Socket.IO Client**: WebSocket client library
 - **Monaco Editor**: VS Code-powered code editor
 
@@ -30,16 +35,16 @@ A real-time peer programming platform that enables multiple developers to code t
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                         Client Layer                         │
+│                         Client Layer                        │
 ├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │   Browser 1  │  │   Browser 2  │  │   Browser N  │      │
-│  │              │  │              │  │              │      │
-│  │  Vue.js +    │  │  Vue.js +    │  │  Vue.js +    │      │
-│  │  Monaco      │  │  Monaco      │  │  Monaco      │      │
-│  │  Editor      │  │  Editor      │  │  Editor      │      │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘      │
+│                                                             │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
+│  │   Browser 1  │  │   Browser 2  │  │   Browser N  │       │
+│  │              │  │              │  │              │       │
+│  │  React.js +  │  │  React.js +  │  │  React.js +  │       │
+│  │  Monaco      │  │  Monaco      │  │  Monaco      │       │
+│  │  Editor      │  │  Editor      │  │  Editor      │       │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘       │
 │         │                 │                 │               │
 │         └─────────────────┼─────────────────┘               │
 │                           │                                 │
@@ -227,7 +232,7 @@ Base.metadata.create_all(bind=engine)
 
 6. **Run the server**
 ```bash
-uvicorn main:sio_app --host 0.0.0.0 --port 8000 --reload
+uvicorn main:sio_app --host 0.0.0.0 --port 5000 --reload
 ```
 
 ### Frontend Setup
@@ -244,10 +249,10 @@ npm install
 
 3. **Configure Socket.IO endpoint**
 
-In your Vue component, ensure the Socket.IO connection points to the backend:
+In your App.jsx component, ensure the Socket.IO connection points to the backend:
 ```javascript
 import io from 'socket.io-client';
-const socket = io('http://localhost:8000');
+const SERVER_URL="http://localhost:5000"
 ```
 
 4. **Run development server**
@@ -404,81 +409,9 @@ Response:
 3. Type in one window, observe updates in others
 4. Test disconnect/reconnect scenarios
 
-### Automated Testing
-```bash
-# Backend tests
-pytest tests/
-
-# Frontend tests
-npm run test
-```
-
-## Deployment
-
-### Docker Deployment
-```dockerfile
-# Dockerfile
-FROM python:3.9
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-COPY . .
-RUN cd frontend && npm install && npm run build
-
-CMD ["uvicorn", "main:sio_app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-```yaml
-# docker-compose.yml
-version: '3.8'
-services:
-  app:
-    build: .
-    ports:
-      - "8000:8000"
-    environment:
-      - DATABASE_URL=postgresql://user:pass@db:5432/codedb
-    depends_on:
-      - db
-  
-  db:
-    image: postgres:14
-    environment:
-      - POSTGRES_DB=codedb
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=pass
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-volumes:
-  postgres_data:
-```
-
-### Cloud Deployment
-- **Backend**: Deploy to Heroku, Railway, or AWS EC2
-- **Database**: Use managed PostgreSQL (AWS RDS, Heroku Postgres)
-- **WebSockets**: Ensure platform supports WebSocket connections
-
-## Contributing
-
-Contributions welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
-
-## License
-
-MIT License - feel free to use in your own projects!
 
 ## Support
 
 For issues or questions:
 - Open a GitHub issue
-- Contact: your-email@example.com
-
----
-
-Built with ❤️ for developers who code better together
+- Contact: pranavsonar2311@gmail.com
